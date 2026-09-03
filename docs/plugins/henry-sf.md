@@ -50,12 +50,12 @@ values in `openclaw users list`:
         enabled: true,
         config: {
           people: {
-            "<joe-profile-id>": { username: "joe.bucci@isidefense.com", role: "admin" },
-            "<member-profile-id>": { username: "person@isidefense.com", role: "member" },
+            "<admin-profile-id>": { username: "admin@example.com", role: "admin" },
+            "<member-profile-id>": { username: "person@example.com", role: "member" },
           },
           orgs: {
             prod: {
-              instanceUrl: "https://isidefense.my.salesforce.com",
+              instanceUrl: "https://example.my.salesforce.com",
               clientId: "<connected app consumer key>",
               jwtKey: { source: "file", provider: "default", id: "henry-sf-jwt-key" },
               default: true,
