@@ -17,9 +17,12 @@ const SESSION_CREDENTIAL_REASON =
 const SFDX_DENIED_REASON = "use sf";
 
 /**
- * Read / denied subcommands for the `sf` CLI. Everything else classifies as
- * write (fail closed). The shim (Task 6) has no imports outside `node:`, so
- * it mirrors this table verbatim instead of importing it.
+ * Read / denied subcommands for the `sf` CLI. Read entries are exact and win
+ * first, so `org list metadata` stays readable; denied entries then cover the
+ * subcommand and everything under it (`org login jwt`, `auth list`), because
+ * each of those can print a live session credential. Everything else
+ * classifies as write (fail closed). The shim (Task 6) has no imports outside
+ * `node:`, so it mirrors this table verbatim instead of importing it.
  */
 export const SF_POLICY_TABLE = {
   denied: {
@@ -97,16 +100,25 @@ function collectSubcommandWords(argv: readonly string[]): string[] {
   return words;
 }
 
+function findDeniedReason(subcommand: string): string | undefined {
+  for (const [key, reason] of DENIED_REASONS) {
+    if (subcommand === key || subcommand.startsWith(`${key} `)) {
+      return reason;
+    }
+  }
+  return undefined;
+}
+
 /** Normalizes one argv (after the `sf` token) to a subcommand and classifies it. */
 export function classifySfArgv(argv: readonly string[]): SfInvocation {
   const words = collectSubcommandWords(splitLeadingColonForm(argv));
   const subcommand = words.join(" ");
-  const deniedReason = DENIED_REASONS.get(subcommand);
-  if (deniedReason !== undefined) {
-    return { subcommand, verdict: "denied", reason: deniedReason };
-  }
   if (READ_SUBCOMMANDS.has(subcommand)) {
     return { subcommand, verdict: "read" };
+  }
+  const deniedReason = findDeniedReason(subcommand);
+  if (deniedReason !== undefined) {
+    return { subcommand, verdict: "denied", reason: deniedReason };
   }
   return { subcommand, verdict: "write" };
 }

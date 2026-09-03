@@ -226,3 +226,31 @@ describe("createExecPolicyHook", () => {
     expect(run("echo hello", undefined)).toBeUndefined();
   });
 });
+
+describe("classifySfArgv denies credential-exposing subcommands by prefix", () => {
+  it.each([
+    [["org", "login", "jwt", "--username", "x"], "org login jwt"],
+    [["org", "login", "web"], "org login web"],
+    [["org", "logout", "--all"], "org logout"],
+    [["auth", "list"], "auth list"],
+    [["auth", "accesstoken", "store"], "auth accesstoken store"],
+    [["org", "open", "--url-only"], "org open"],
+    [["org", "display", "--verbose"], "org display"],
+  ])("denies %j", (argv, subcommand) => {
+    expect(classifySfArgv(argv)).toMatchObject({ subcommand, verdict: "denied" });
+  });
+
+  it("keeps read entries under a denied prefix readable", () => {
+    expect(classifySfArgv(["org", "list", "metadata", "--json"])).toMatchObject({
+      subcommand: "org list metadata",
+      verdict: "read",
+    });
+    expect(classifySfArgv(["org", "list", "limits"])).toMatchObject({ verdict: "read" });
+    expect(classifySfArgv(["org", "list"])).toMatchObject({ verdict: "denied" });
+  });
+
+  it("classifies a bare sf as read", () => {
+    expect(classifySfArgv([])).toMatchObject({ subcommand: "", verdict: "read" });
+    expect(classifySfArgv(["--json"])).toMatchObject({ subcommand: "", verdict: "read" });
+  });
+});
