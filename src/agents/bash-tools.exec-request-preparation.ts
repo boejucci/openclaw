@@ -267,6 +267,10 @@ export function createExecRequestPreparation(params: {
       {
         agentId: context?.hookContext?.agentId ?? params.agentId,
         sessionKey: context?.hookContext?.sessionKey ?? params.defaults?.sessionKey,
+        ...(context?.hookContext?.runId ? { runId: context.hookContext.runId } : {}),
+        ...(context?.hookContext?.requester?.senderId
+          ? { senderId: context.hookContext.requester.senderId }
+          : {}),
         messageProvider: params.defaults?.messageProvider,
         channelId: params.defaults?.currentChannelId ?? context?.hookContext?.channelId,
         ...(params.defaults?.channelContext

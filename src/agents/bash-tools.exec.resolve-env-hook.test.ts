@@ -235,6 +235,57 @@ describe("exec resolve_exec_env hook wiring", () => {
     });
   });
 
+  it("forwards the run id and requester sender to resolve_exec_env", async () => {
+    installResolveExecEnvHook({ PLUGIN_SAFE: "yes" });
+
+    const tool = createExecTool({
+      host: "auto",
+      security: "full",
+      ask: "off",
+      sessionKey: "agent:main:webchat:direct",
+      messageProvider: "webchat",
+    });
+    const prepared = await tool.prepareBeforeToolCallParams?.(
+      { command: "echo ok", yieldMs: 120_000 },
+      {
+        hookContext: {
+          agentId: "main",
+          sessionKey: "agent:main:webchat:direct",
+          runId: "run-42",
+          requester: { channel: "webchat", senderId: "profile-ada", senderIsOwner: false },
+        },
+      },
+    );
+    await tool.execute("call-1", prepared ?? { command: "echo ok", yieldMs: 120_000 });
+
+    expect(mocks.hookRunner?.runResolveExecEnv).toHaveBeenCalledWith(
+      { sessionKey: "agent:main:webchat:direct", toolName: "exec", host: "gateway" },
+      expect.objectContaining({
+        agentId: "main",
+        sessionKey: "agent:main:webchat:direct",
+        runId: "run-42",
+        senderId: "profile-ada",
+      }),
+    );
+  });
+
+  it("omits runId and senderId from resolve_exec_env when the run has no requester", async () => {
+    installResolveExecEnvHook({ PLUGIN_SAFE: "yes" });
+
+    const tool = createExecTool({
+      host: "auto",
+      security: "full",
+      ask: "off",
+      sessionKey: "agent:main:cron",
+    });
+    await tool.execute("call-1", { command: "echo ok", yieldMs: 120_000 });
+
+    const ctx = mocks.hookRunner?.runResolveExecEnv?.mock.calls[0]?.[1];
+    expect(ctx).toBeDefined();
+    expect(ctx).not.toHaveProperty("runId");
+    expect(ctx).not.toHaveProperty("senderId");
+  });
+
   it("inherits configured node for auto while forwarding filtered plugin env", async () => {
     installResolveExecEnvHook({
       NODE_HOST_SAFE: "yes",

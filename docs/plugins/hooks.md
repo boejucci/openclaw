@@ -700,7 +700,9 @@ harness-native shell. It receives:
 - `event.toolName`, currently always `"exec"`
 - `event.host`, one of `"gateway"`, `"sandbox"`, or `"node"`
 - context fields such as `ctx.agentId`, `ctx.sessionKey`,
-  `ctx.messageProvider`, and `ctx.channelId`
+  `ctx.messageProvider`, `ctx.channelId`, and, when the run was started by a
+  message with a proven requester, `ctx.runId` and `ctx.senderId` (the
+  host-derived requester; absent for cron, heartbeat, and subagent runs)
 
 Return a `Record<string, string>` to merge into the exec environment. Handlers
 run in priority order; later results override earlier results for the same
