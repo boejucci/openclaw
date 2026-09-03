@@ -1,0 +1,94 @@
+{
+  "id": "henry-sf",
+  "name": "Henry Salesforce",
+  "description": "Runs every sf CLI call as the requesting person's Salesforce user; no shared credential.",
+  "activation": {
+    "onStartup": true
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "orgs.*.jwtKey",
+          "expected": "string"
+        }
+      ]
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "$defs": {
+      "secretRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": { "type": "string", "enum": ["env", "file", "exec", "store"] },
+          "provider": { "type": "string" },
+          "id": { "type": "string" }
+        },
+        "required": ["source", "provider", "id"]
+      },
+      "secretInput": {
+        "anyOf": [{ "type": "string", "minLength": 1 }, { "$ref": "#/$defs/secretRef" }]
+      },
+      "person": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "username": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "enum": ["admin", "member"] },
+          "org": { "type": "string", "minLength": 1 }
+        },
+        "required": ["username", "role"]
+      },
+      "org": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "instanceUrl": { "type": "string", "minLength": 1 },
+          "loginUrl": { "type": "string", "minLength": 1 },
+          "clientId": { "type": "string", "minLength": 1 },
+          "jwtKey": { "$ref": "#/$defs/secretInput" },
+          "default": { "type": "boolean" }
+        },
+        "required": ["instanceUrl", "clientId", "jwtKey"]
+      }
+    },
+    "properties": {
+      "people": {
+        "type": "object",
+        "additionalProperties": { "$ref": "#/$defs/person" }
+      },
+      "orgs": {
+        "type": "object",
+        "additionalProperties": { "$ref": "#/$defs/org" }
+      },
+      "route": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "minLength": 1 }
+        }
+      },
+      "credentialUrl": { "type": "string", "minLength": 1 },
+      "runTokenTtlSeconds": { "type": "integer", "minimum": 60, "maximum": 3600 },
+      "credentialCacheSeconds": { "type": "integer", "minimum": 0, "maximum": 7200 }
+    }
+  },
+  "uiHints": {
+    "people": {
+      "label": "People",
+      "help": "Keyed by OpenClaw profile id. Each entry maps the profile to a Salesforce username and a Henry role."
+    },
+    "orgs": {
+      "label": "Salesforce orgs",
+      "help": "Connected App consumer key and JWT signing key per org. Mark one org default."
+    },
+    "credentialUrl": {
+      "label": "Credential URL override",
+      "help": "Loopback URL the sf shim calls. Defaults to http://127.0.0.1:<gateway.port><route.path>.",
+      "advanced": true
+    }
+  }
+}
