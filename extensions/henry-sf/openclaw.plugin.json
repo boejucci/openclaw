@@ -10,7 +10,8 @@
       "paths": [
         {
           "path": "orgs.*.jwtKey",
-          "expected": "string"
+          "expected": "string",
+          "ownerKind": "capability"
         }
       ]
     }
