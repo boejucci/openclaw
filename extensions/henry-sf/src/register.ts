@@ -4,6 +4,7 @@ import { findPerson, resolveHenrySfConfig, type HenrySfOrg } from "./config.js";
 import { createCredentialRouteHandler } from "./credential-route.js";
 import { createCredentialService } from "./credential-service.js";
 import { createExecPolicyHook } from "./exec-policy.js";
+import { createRunLedger } from "./run-ledger.js";
 import { createRunTokenIssuer } from "./run-token.js";
 import { mintSalesforceAccessToken } from "./sf-jwt.js";
 
@@ -47,6 +48,7 @@ export function registerHenrySf(api: OpenClawPluginApi, deps: HenrySfDeps = {}):
   }
 
   const issuer = createRunTokenIssuer({ ttlSeconds: config.runTokenTtlSeconds, now: deps.now });
+  const runLedger = createRunLedger({ ttlSeconds: config.runTokenTtlSeconds, now: deps.now });
   const credentials = createCredentialService({
     config,
     resolveJwtKey: createJwtKeyResolver(api, deps.resolveSecret),
@@ -61,7 +63,13 @@ export function registerHenrySf(api: OpenClawPluginApi, deps: HenrySfDeps = {}):
     path: config.routePath,
     auth: "plugin",
     match: "exact",
-    handler: createCredentialRouteHandler({ issuer, config, credentials, logger: api.logger }),
+    handler: createCredentialRouteHandler({
+      issuer,
+      config,
+      credentials,
+      runLedger,
+      logger: api.logger,
+    }),
   });
 
   api.on("resolve_exec_env", (event, ctx) => {
@@ -80,6 +88,14 @@ export function registerHenrySf(api: OpenClawPluginApi, deps: HenrySfDeps = {}):
   api.on("before_tool_call", createExecPolicyHook({ config }), {
     matcher: ["exec"],
     priority: 100,
+  });
+
+  // A token printed into a shared transcript must not outlive its run.
+  api.on("agent_end", (event, ctx) => {
+    const runId = ctx.runId ?? event.runId;
+    if (runId) {
+      runLedger.markEnded(runId);
+    }
   });
 
   api.logger.info?.(

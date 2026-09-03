@@ -92,6 +92,18 @@ Copy `extensions/henry-sf/shim/sf.mjs` to `/opt/henry/bin/sf` (mode `755`).
 That copy is what the shell resolves when a command runs `sf`; it signs in
 under a throwaway `HOME` and then execs the real CLI at `HENRY_SF_REAL_BIN`.
 
+As defense in depth, keep the credential path off the public hostname in the
+tunnel's ingress rules, ahead of the catch-all:
+
+```yaml
+ingress:
+  - hostname: henry.example.com
+    path: ^/henry/sf/
+    service: http_status:404
+  - hostname: henry.example.com
+    service: http://localhost:18789
+```
+
 ## Trust model and known limits
 
 Guaranteed by this plugin:
@@ -99,8 +111,11 @@ Guaranteed by this plugin:
 - The run token is bound to the exact `(runId, senderId)` pair, HMAC-signed
   with a process-random secret, and expires in 15 minutes. It is minted only
   when the requester is a configured person and the exec host is `gateway`.
-- The credential route accepts loopback connections only, returns a
-  credential only for the person the run token names, and never logs it.
+- The credential route accepts loopback connections only and refuses any
+  request that carries proxy or Cloudflare headers (`cloudflared` forwards
+  tunnel traffic from loopback, so the address alone is not proof). It stops
+  honouring a run's token the moment that run ends, returns a credential only
+  for the person the token names, and never logs it.
 - The JWT private key never leaves the Gateway process; it is a SecretRef in
   plugin config, resolved in memory.
 - Each `sf` invocation gets a throwaway `HOME`, and nothing persists on disk
@@ -121,6 +136,12 @@ Known limits, stated plainly:
   pre-authorizing users on the Connected App. What this plugin actually
   guarantees is narrower, and it is the one that matters on a shared box:
   nobody ever gets anyone else's credential.
+- While a run is in progress its run token is visible to that run's own
+  commands, so a model that prints its environment into a shared transcript
+  exposes a token that another local process could redeem until the run
+  ends. OpenClaw does not redact plugin-injected environment values, so the
+  transcript is the exposure to watch; the hard stop is `agent_end`, which
+  retires the token, and the 15-minute TTL bounds the rest.
 - `host: "sandbox"` exec runs are unsupported. The `resolve_exec_env` hook
   returns nothing for a non-`gateway` host, and the shim fails closed with no
   token. Run the Gateway with `tools.exec.host: "gateway"` for this plugin to

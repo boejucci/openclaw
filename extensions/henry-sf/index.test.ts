@@ -86,12 +86,16 @@ function buildTestApi(pluginConfig: Record<string, unknown> = buildPluginConfig(
   return { api, on, registerHttpRoute, info };
 }
 
-function findResolveExecEnv(on: ReturnType<typeof vi.fn>): CapturedHandler {
-  const handler = on.mock.calls.find(([name]: [string]) => name === "resolve_exec_env")?.[1];
+function findHook(on: ReturnType<typeof vi.fn>, hookName: string): CapturedHandler {
+  const handler = on.mock.calls.find(([name]: [string]) => name === hookName)?.[1];
   if (typeof handler !== "function") {
-    throw new Error("resolve_exec_env was not registered");
+    throw new Error(`${hookName} was not registered`);
   }
   return handler as CapturedHandler;
+}
+
+function findResolveExecEnv(on: ReturnType<typeof vi.fn>): CapturedHandler {
+  return findHook(on, "resolve_exec_env");
 }
 
 function findRouteHandler(registerHttpRoute: ReturnType<typeof vi.fn>): CapturedRouteHandler {
@@ -230,5 +234,28 @@ describe("henry-sf plugin", () => {
     });
 
     expect(() => plugin.register(api)).toThrow(/references unknown org "sandbox"/);
+  });
+
+  it("stops honouring a run's token once agent_end fires for that run", async () => {
+    const { api, on, registerHttpRoute } = buildTestApi();
+    const mint = vi.fn<typeof mintSalesforceAccessToken>().mockResolvedValue(fixedCredential());
+    registerHenrySf(api, { mint });
+
+    const env = findResolveExecEnv(on)(
+      { host: "gateway" },
+      { runId: "run-9", senderId: ADMIN_PROFILE_ID },
+    ) as Record<string, string>;
+    const route = findRouteHandler(registerHttpRoute);
+
+    const live = fakeResponse();
+    await route(fakeRequest({ authorization: `Bearer ${env.HENRY_SF_RUN_TOKEN}` }), live.res);
+    expect(live.getStatusCode()).toBe(200);
+
+    findHook(on, "agent_end")({ runId: "run-9", messages: [], success: true }, { runId: "run-9" });
+
+    const ended = fakeResponse();
+    await route(fakeRequest({ authorization: `Bearer ${env.HENRY_SF_RUN_TOKEN}` }), ended.res);
+    expect(ended.getStatusCode()).toBe(401);
+    expect(ended.getBody()).toEqual({ error: "run_ended" });
   });
 });

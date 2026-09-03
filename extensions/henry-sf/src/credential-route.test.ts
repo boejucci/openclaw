@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HenrySfPerson, ResolvedHenrySfConfig } from "./config.js";
 import { createCredentialRouteHandler } from "./credential-route.js";
 import type { CredentialService, PersonCredential } from "./credential-service.js";
+import { createRunLedger } from "./run-ledger.js";
 import { createRunTokenIssuer } from "./run-token.js";
 
 const PERSON: HenrySfPerson = {
@@ -46,10 +47,14 @@ function fakeRequest(params: {
   method?: string;
   authorization?: string;
   remoteAddress?: string;
+  headers?: Record<string, string>;
 }): IncomingMessage {
   return {
     method: params.method ?? "GET",
-    headers: params.authorization !== undefined ? { authorization: params.authorization } : {},
+    headers: {
+      ...(params.authorization !== undefined ? { authorization: params.authorization } : {}),
+      ...params.headers,
+    },
     socket: { remoteAddress: params.remoteAddress ?? "127.0.0.1" },
   } as unknown as IncomingMessage;
 }
@@ -236,5 +241,52 @@ describe("createCredentialRouteHandler", () => {
       runId: "run-42",
     });
     expect(params.credentials.forPerson).toHaveBeenCalledWith(PERSON);
+  });
+
+  it("refuses a loopback request that arrived through a proxy or the tunnel", async () => {
+    const issuer = createRunTokenIssuer({ ttlSeconds: 900 });
+    const token = issuer.issue({ runId: "run-1", senderId: PERSON.profileId });
+    const handler = createCredentialRouteHandler({
+      issuer,
+      config: buildConfig(),
+      credentials: buildStubCredentialService(),
+      logger: { warn: vi.fn() },
+    });
+    for (const headers of [
+      { "x-forwarded-for": "203.0.113.7" },
+      { "cf-connecting-ip": "203.0.113.7" },
+      { "cf-ray": "8a1b2c3d4e5f-IAD" },
+      { "cf-access-jwt-assertion": "eyJ" },
+    ]) {
+      const { res, getStatusCode, getBody } = fakeResponse();
+      await handler(fakeRequest({ authorization: `Bearer ${token}`, headers }), res);
+      expect(getStatusCode(), JSON.stringify(headers)).toBe(403);
+      expect(getBody()).toEqual({ error: "loopback_only" });
+    }
+  });
+
+  it("stops honouring a run's token once the ledger says the run ended", async () => {
+    const issuer = createRunTokenIssuer({ ttlSeconds: 900 });
+    const runLedger = createRunLedger({ ttlSeconds: 900 });
+    const credentials = buildStubCredentialService();
+    const handler = createCredentialRouteHandler({
+      issuer,
+      config: buildConfig(),
+      credentials,
+      runLedger,
+      logger: { warn: vi.fn() },
+    });
+    const token = issuer.issue({ runId: "run-1", senderId: PERSON.profileId });
+
+    const live = fakeResponse();
+    await handler(fakeRequest({ authorization: `Bearer ${token}` }), live.res);
+    expect(live.getStatusCode()).toBe(200);
+
+    runLedger.markEnded("run-1");
+    const ended = fakeResponse();
+    await handler(fakeRequest({ authorization: `Bearer ${token}` }), ended.res);
+    expect(ended.getStatusCode()).toBe(401);
+    expect(ended.getBody()).toEqual({ error: "run_ended" });
+    expect(credentials.forPerson).toHaveBeenCalledTimes(1);
   });
 });
