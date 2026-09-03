@@ -110,6 +110,16 @@ Older or otherwise unqualified messages retain their saved text and sender label
 
 GitHub-backed sign-in through Cloudflare Access or Tailscale Serve automatically verifies the person's GitHub account under **Settings → Profile → Identity**. Public `Co-authored-by` credit remains a separate **Git co-author credit** toggle, on by default for verified accounts. Attribution uses that preference plus the durable profile participant records described above, not display names or the four-person facepile projection. See [User model](/concepts/user-model#gateway-profile-and-github-credit) for privacy, eligibility, bounds, account changes, and disabling future credit.
 
+## Profile as tool requester
+
+Control UI, TUI, and browser-copilot turns carry the authenticated Gateway profile as the turn's sender (`SenderId` is the profile id, `SenderName` the profile display name). Requester-scoped features therefore work for people signed in through trusted-proxy or Tailscale identity:
+
+- MCP servers declared with `oauth.identity: "per-requester"` connect each person's own account, keyed by `(webchat, "", profileId)`.
+- `tools.toolsBySender` entries match `id:<profileId>` or `channel:webchat:<profileId>`.
+- `before_tool_call` hooks receive `ctx.requester.senderId` set to the profile id.
+
+A UI connection without a verified profile (token or password auth, or an identity sync still pending) stays senderless, so those features fail closed rather than falling back to a shared credential. Non-UI clients keep their client id as the sender.
+
 ## Related
 
 - [The main session](/concepts/main-session)
