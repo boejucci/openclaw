@@ -21,6 +21,7 @@ import type { prepareChatSendAttachments } from "./chat-send-attachments.js";
 import type { NormalizedChatSendRequest } from "./chat-send-request.js";
 import type { PreparedChatSendSession } from "./chat-send-session.js";
 import { normalizeOptionalChatText } from "./chat-text-normalization.js";
+import { gatewayClientSenderFields } from "./gateway-client-identity.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
 import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
 
@@ -81,6 +82,35 @@ function buildChatSendPromptMedia(
     .filter((ref) => ref.mimeType.startsWith("image/"))
     .map((ref) => ({ path: ref.path, url: ref.mediaRef, contentType: ref.mimeType }));
   return media.length > 0 ? media : undefined;
+}
+
+/**
+ * Non-UI clients keep their client id as the sender. Operator UI clients carry
+ * the authenticated Gateway profile instead, so requester-scoped MCP
+ * credentials, toolsBySender, and requester-aware hooks see a verified person;
+ * a UI connection without a profile identity stays senderless so those
+ * surfaces keep failing closed.
+ */
+export function resolveChatSendSenderFields(params: {
+  client: GatewayRequestHandlerOptions["client"];
+  clientInfo?: GatewayClientInfo;
+}): Pick<MsgContext, "SenderId" | "SenderName" | "SenderUsername"> {
+  if (!isOperatorUiClient(params.clientInfo)) {
+    return {
+      SenderId: params.clientInfo?.id,
+      SenderName: params.clientInfo?.displayName,
+      SenderUsername: params.clientInfo?.displayName,
+    };
+  }
+  const sender = gatewayClientSenderFields(params.client ?? null).sender;
+  if (sender?.identity?.type !== "profile" || typeof sender.id !== "string" || !sender.id) {
+    return {};
+  }
+  const name = typeof sender.name === "string" && sender.name ? sender.name : undefined;
+  return {
+    SenderId: sender.id,
+    ...(name ? { SenderName: name, SenderUsername: name } : {}),
+  };
 }
 
 function buildChatSendMessageContext(params: {
@@ -157,13 +187,7 @@ function buildChatSendMessageContext(params: {
     MessageSid: params.clientRunId,
     SessionCreation: { ...creation, ...(sandbox ? { sandbox } : {}) },
     ApprovalReviewerDeviceId: queuedFollowupOwnerDeviceId,
-    ...(!isOperatorUiClient(params.clientInfo)
-      ? {
-          SenderId: params.clientInfo?.id,
-          SenderName: params.clientInfo?.displayName,
-          SenderUsername: params.clientInfo?.displayName,
-        }
-      : {}),
+    ...resolveChatSendSenderFields({ client: params.client, clientInfo: params.clientInfo }),
     GatewayClientScopes: params.client?.connect?.scopes ?? [],
     GatewayClientCaps: params.client?.connect?.caps ?? [],
     GatewayRunToolBindings: params.toolBindings,

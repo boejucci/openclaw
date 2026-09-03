@@ -131,9 +131,11 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
         sessionId: params.attempt.sessionId,
         sessionKey: params.attempt.sessionKey,
         agentDir: params.agentDir,
-        // senderId is only set from the verified inbound sender (sessionCtx.SenderId
-        // or the triggering run's sender on follow-ups). Cron/subagent/heartbeat runs
-        // leave it unset, so requester-scoped MCP stays fail-closed for those paths.
+        // senderId is only set from the verified inbound sender (sessionCtx.SenderId,
+        // which for operator UI turns is the authenticated Gateway profile id, or the
+        // triggering run's sender on follow-ups). Cron/subagent/heartbeat runs and UI
+        // connections without a profile leave it unset, so requester-scoped MCP stays
+        // fail-closed for those paths.
         requesterSenderId: params.attempt.senderId,
         agentAccountId: params.attempt.agentAccountId,
         messageChannel: params.attempt.messageChannel ?? params.attempt.messageProvider,
