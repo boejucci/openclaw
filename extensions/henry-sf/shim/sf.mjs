@@ -232,7 +232,7 @@ function redactToken(text, token) {
   return token ? text.split(token).join("[redacted]") : text;
 }
 
-export async function run(argv, env, io) {
+async function runShimCommand(argv, env, io) {
   const token = env.HENRY_SF_RUN_TOKEN;
   const credentialUrl = env.HENRY_SF_CREDENTIAL_URL;
   if (!token || !credentialUrl) {
@@ -335,7 +335,7 @@ async function main() {
       process.stderr.write(`${message}\n`);
     },
   };
-  process.exitCode = await run(process.argv.slice(2), process.env, io);
+  process.exitCode = await runShimCommand(process.argv.slice(2), process.env, io);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
