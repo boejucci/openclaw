@@ -312,7 +312,7 @@ describe("prepareChatSendUserTurn", () => {
     await expect(readInput()).resolves.toEqual(controller.baseInput);
   });
 
-  it("carries pre-staged media and device ownership without UI sender decoration", async () => {
+  it("carries pre-staged media, device ownership, and the authenticated profile as the sender", async () => {
     const { controller, readInput } = createUserTurnInputController();
     const prepared = prepareChatSendUserTurn({
       request: {
@@ -383,9 +383,96 @@ describe("prepareChatSendUserTurn", () => {
         actor: { type: "human", id: "profile-ada" },
       },
     });
-    expect(prepared.ctx).not.toHaveProperty("SenderId");
+    expect(prepared.ctx).toMatchObject({
+      SenderId: "profile-ada",
+      SenderName: "Ada",
+      SenderUsername: "Ada",
+    });
     expect(prepared.queuedFollowupOwnerKey).toBe("device:device-1");
     await expect(readInput()).resolves.toEqual(controller.baseInput);
+  });
+
+  it("keeps operator UI turns senderless when the connection has no authenticated profile", async () => {
+    const { controller } = createUserTurnInputController();
+    const prepared = prepareChatSendUserTurn({
+      request: {
+        clientInfo: createClientInfo({
+          id: GATEWAY_CLIENT_IDS.CONTROL_UI,
+          mode: GATEWAY_CLIENT_MODES.UI,
+        }),
+        normalizedAttachments: [],
+        suppressCommandInterpretation: false,
+        systemInputProvenance: undefined,
+        systemProvenanceReceipt: undefined,
+      },
+      session: {
+        agentId: "main",
+        clientRunId: "run-2",
+        sessionKey: "agent:main:main",
+      },
+      admission: {
+        originatingRoute: {
+          originatingChannel: "webchat",
+          explicitDeliverRoute: false,
+        },
+      },
+      attachments: createAttachments({ parsedMessage: "hello" }),
+      client: {
+        connId: "conn-2",
+        connect: {
+          device: { id: "device-2" },
+          scopes: ["operator.write"],
+          caps: [],
+        },
+      } as never,
+      logGateway: { warn: vi.fn() } as never,
+      userTurn: controller,
+    });
+
+    expect(prepared.ctx).not.toHaveProperty("SenderId");
+    expect(prepared.ctx).not.toHaveProperty("SenderName");
+    expect(prepared.ctx).not.toHaveProperty("SenderUsername");
+  });
+
+  it("never uses a raw authenticated user id as the sender for operator UI turns", async () => {
+    const { controller } = createUserTurnInputController();
+    const prepared = prepareChatSendUserTurn({
+      request: {
+        clientInfo: createClientInfo({
+          id: GATEWAY_CLIENT_IDS.CONTROL_UI,
+          mode: GATEWAY_CLIENT_MODES.UI,
+        }),
+        normalizedAttachments: [],
+        suppressCommandInterpretation: false,
+        systemInputProvenance: undefined,
+        systemProvenanceReceipt: undefined,
+      },
+      session: {
+        agentId: "main",
+        clientRunId: "run-3",
+        sessionKey: "agent:main:main",
+      },
+      admission: {
+        originatingRoute: {
+          originatingChannel: "webchat",
+          explicitDeliverRoute: false,
+        },
+      },
+      attachments: createAttachments({ parsedMessage: "hello" }),
+      client: {
+        connId: "conn-3",
+        authenticatedUserId: "ada@example.com",
+        connect: {
+          device: { id: "device-3" },
+          scopes: ["operator.write"],
+          caps: [],
+        },
+      } as never,
+      logGateway: { warn: vi.fn() } as never,
+      userTurn: controller,
+    });
+
+    expect(prepared.ctx).not.toHaveProperty("SenderId");
   });
 
   it("carries retained image claim-check facts without changing the trailing prompt line", async () => {
