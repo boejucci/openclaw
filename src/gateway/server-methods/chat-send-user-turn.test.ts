@@ -475,6 +475,119 @@ describe("prepareChatSendUserTurn", () => {
     expect(prepared.ctx).not.toHaveProperty("SenderId");
   });
 
+  it("keeps accepted suggestions senderless instead of adopting the author's attribution", async () => {
+    const { controller } = createUserTurnInputController();
+    const prepared = prepareChatSendUserTurn({
+      request: {
+        clientInfo: createClientInfo({
+          id: GATEWAY_CLIENT_IDS.CONTROL_UI,
+          mode: GATEWAY_CLIENT_MODES.UI,
+        }),
+        normalizedAttachments: [],
+        suppressCommandInterpretation: false,
+        systemInputProvenance: undefined,
+        systemProvenanceReceipt: undefined,
+      },
+      session: {
+        agentId: "main",
+        clientRunId: "run-4",
+        sessionKey: "agent:main:main",
+      },
+      admission: {
+        originatingRoute: {
+          originatingChannel: "webchat",
+          explicitDeliverRoute: false,
+        },
+      },
+      attachments: createAttachments({ parsedMessage: "hello" }),
+      client: {
+        connId: "conn-4",
+        authenticatedUserProfile: {
+          profileId: "profile-owner",
+          displayName: "Owner",
+          hasAvatar: false,
+          updatedAt: 1,
+        },
+        internal: {
+          syntheticClient: true,
+          senderAttribution: {
+            id: "profile-guest",
+            identity: { type: "profile", id: "profile-guest" },
+            name: "Suggested by Guest",
+          },
+        },
+        connect: {
+          device: { id: "device-4" },
+          scopes: ["operator.admin"],
+          caps: [],
+        },
+      } as never,
+      logGateway: { warn: vi.fn() } as never,
+      userTurn: controller,
+    });
+
+    expect(prepared.ctx).not.toHaveProperty("SenderId");
+    expect(prepared.ctx).not.toHaveProperty("SenderName");
+    expect(prepared.ctx).not.toHaveProperty("SenderUsername");
+  });
+
+  it("uses the connection's own profile as the sender even when an attribution names another profile", async () => {
+    const { controller } = createUserTurnInputController();
+    const prepared = prepareChatSendUserTurn({
+      request: {
+        clientInfo: createClientInfo({
+          id: GATEWAY_CLIENT_IDS.CONTROL_UI,
+          mode: GATEWAY_CLIENT_MODES.UI,
+        }),
+        normalizedAttachments: [],
+        suppressCommandInterpretation: false,
+        systemInputProvenance: undefined,
+        systemProvenanceReceipt: undefined,
+      },
+      session: {
+        agentId: "main",
+        clientRunId: "run-5",
+        sessionKey: "agent:main:main",
+      },
+      admission: {
+        originatingRoute: {
+          originatingChannel: "webchat",
+          explicitDeliverRoute: false,
+        },
+      },
+      attachments: createAttachments({ parsedMessage: "hello" }),
+      client: {
+        connId: "conn-5",
+        authenticatedUserProfile: {
+          profileId: "profile-owner",
+          displayName: "Owner",
+          hasAvatar: false,
+          updatedAt: 1,
+        },
+        internal: {
+          senderAttribution: {
+            id: "profile-guest",
+            identity: { type: "profile", id: "profile-guest" },
+            name: "Suggested by Guest",
+          },
+        },
+        connect: {
+          device: { id: "device-5" },
+          scopes: ["operator.admin"],
+          caps: [],
+        },
+      } as never,
+      logGateway: { warn: vi.fn() } as never,
+      userTurn: controller,
+    });
+
+    expect(prepared.ctx).toMatchObject({
+      SenderId: "profile-owner",
+      SenderName: "Owner",
+      SenderUsername: "Owner",
+    });
+  });
+
   it("carries retained image claim-check facts without changing the trailing prompt line", async () => {
     const { controller, readInput } = createUserTurnInputController();
     const mediaRef = "media://inbound/image-1.png";

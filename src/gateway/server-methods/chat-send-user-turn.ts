@@ -21,7 +21,6 @@ import type { prepareChatSendAttachments } from "./chat-send-attachments.js";
 import type { NormalizedChatSendRequest } from "./chat-send-request.js";
 import type { PreparedChatSendSession } from "./chat-send-session.js";
 import { normalizeOptionalChatText } from "./chat-text-normalization.js";
-import { gatewayClientSenderFields } from "./gateway-client-identity.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
 import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
 
@@ -102,13 +101,17 @@ export function resolveChatSendSenderFields(params: {
       SenderUsername: params.clientInfo?.displayName,
     };
   }
-  const sender = gatewayClientSenderFields(params.client ?? null).sender;
-  if (sender?.identity?.type !== "profile" || typeof sender.id !== "string" || !sender.id) {
+  // Only the connection's own verified profile may become the tool requester.
+  // Transcript attribution (an accepted suggestion dispatches as a synthetic
+  // client attributed to its author) must never select another person's
+  // credentials, so synthetic dispatches stay senderless.
+  const profile = params.client?.authenticatedUserProfile;
+  if (!profile?.profileId || params.client?.internal?.syntheticClient) {
     return {};
   }
-  const name = typeof sender.name === "string" && sender.name ? sender.name : undefined;
+  const name = profile.displayName?.trim() ? profile.displayName : undefined;
   return {
-    SenderId: sender.id,
+    SenderId: profile.profileId,
     ...(name ? { SenderName: name, SenderUsername: name } : {}),
   };
 }

@@ -118,7 +118,7 @@ Control UI, TUI, and browser-copilot turns carry the authenticated Gateway profi
 - `tools.toolsBySender` entries match `id:<profileId>` or `channel:webchat:<profileId>`.
 - `before_tool_call` hooks receive `ctx.requester.senderId` set to the profile id.
 
-A UI connection without a verified profile (token or password auth, or an identity sync still pending) stays senderless, so those features fail closed rather than falling back to a shared credential. Non-UI clients keep their client id as the sender.
+A UI connection without a verified profile (token or password auth, or an identity sync still pending) stays senderless, so those features fail closed rather than falling back to a shared credential. Only the connection's own profile counts: a turn dispatched on someone's behalf, such as a suggestion an owner accepts (sent as a synthetic client attributed to its author), is also senderless, so the transcript shows who suggested it while no person's credentials are used. Non-UI clients keep their client id as the sender.
 
 ## Related
 
