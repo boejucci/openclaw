@@ -140,4 +140,21 @@ describe("createCredentialService", () => {
 
     expect(mint).toHaveBeenCalledTimes(2);
   });
+
+  it("single-flights concurrent calls even when the cache is disabled", async () => {
+    const mint = vi.fn<typeof mintSalesforceAccessToken>().mockResolvedValue(fixedCredential());
+    const resolveJwtKey = vi.fn<(org: HenrySfOrg) => Promise<string>>().mockResolvedValue("pem");
+    const service = createCredentialService({
+      config: buildConfig({ credentialCacheSeconds: 0 }),
+      resolveJwtKey,
+      mint,
+      now: () => 0,
+    });
+
+    await Promise.all([service.forPerson(person), service.forPerson(person)]);
+    expect(mint).toHaveBeenCalledTimes(1);
+
+    await service.forPerson(person);
+    expect(mint).toHaveBeenCalledTimes(2);
+  });
 });

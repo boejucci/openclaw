@@ -50,11 +50,15 @@ export function createCredentialService(params: {
         return cached.promise;
       }
 
-      // Stored synchronously (before the mint settles) so truly concurrent callers
-      // single-flight onto this same promise even when cacheMs is 0; the settle
-      // handlers below then decide whether the entry survives past this call.
+      // Stored synchronously with no expiry while in flight so concurrent callers
+      // single-flight onto this promise even when caching is disabled; the settle
+      // handlers below then drop the entry (cache off, or a failure) or leave it
+      // until the cache window ends.
       const promise = mintForPerson(person);
-      const entry: CacheEntry = { promise, expiresAtMs: now() + cacheMs };
+      const entry: CacheEntry = {
+        promise,
+        expiresAtMs: cacheMs > 0 ? now() + cacheMs : Number.POSITIVE_INFINITY,
+      };
       cache.set(key, entry);
       promise.then(
         () => {
