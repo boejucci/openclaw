@@ -56,7 +56,7 @@ values in `openclaw users list`:
           orgs: {
             prod: {
               instanceUrl: "https://example.my.salesforce.com",
-              clientId: "<connected app consumer key>",
+              clientId: "<external client app consumer key>",
               jwtKey: { source: "file", provider: "default", id: "henry-sf-jwt-key" },
               default: true,
             },
@@ -133,7 +133,7 @@ Known limits, stated plainly:
   token and use that person's own access token over REST. That token is
   still the member's own Salesforce identity, so the real boundary is
   Salesforce's profiles and permission sets, which the admin controls when
-  pre-authorizing users on the Connected App. What this plugin actually
+  pre-authorizing users on the External Client App. What this plugin actually
   guarantees is narrower, and it is the one that matters on a shared box:
   nobody ever gets anyone else's credential.
 - While a run is in progress its run token is visible to that run's own
@@ -149,13 +149,15 @@ Known limits, stated plainly:
 
 ## Salesforce prerequisites
 
-- A Connected App with digital signatures enabled: upload the certificate
-  whose matching private key the plugin holds as `jwtKey`, so it can sign
-  the JWT bearer assertion.
+- An External Client App (or a legacy Connected App) with OAuth enabled and
+  digital signatures on: upload the certificate whose matching private key
+  the plugin holds as `jwtKey`, so it can sign the JWT bearer assertion. The
+  key stays on the Gateway; people never see it, and their own Salesforce
+  permissions apply to every call.
 - OAuth scopes `api` and `refresh_token, offline_access`.
 - Permitted Users set to "Admin approved users are pre-authorized".
-- Every configured person assigned to the Connected App through a profile or
-  a permission set; an unauthorized user's calls fail credential minting.
+- Every configured person assigned to the app through a profile or a
+  permission set; an unauthorized user's calls fail credential minting.
 - The JWT `sub` claim is each person's Salesforce username, so the
   `username` in a person's entry must be an active Salesforce user's exact
   username.
