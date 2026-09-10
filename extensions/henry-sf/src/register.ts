@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { resolveConfiguredSecretInputString } from "openclaw/plugin-sdk/secret-input-runtime";
 import { findPerson, resolveHenrySfConfig, type HenrySfOrg } from "./config.js";
@@ -15,6 +16,14 @@ export type HenrySfDeps = {
 };
 
 const DEFAULT_GATEWAY_PORT = 18789;
+
+// One secret per process, not per register() call: the loader can invoke
+// register more than once (duplicate discovery roots observed live on the
+// gateway), and a per-call secret leaves the minting hook and the verifying
+// route on different secrets — every fresh run token then fails with
+// invalid_run_token. Module scope survives duplicate registration; the
+// secret still rotates on process restart, as designed.
+const PROCESS_RUN_TOKEN_SECRET = randomBytes(32);
 
 function createJwtKeyResolver(
   api: OpenClawPluginApi,
@@ -47,7 +56,11 @@ export function registerHenrySf(api: OpenClawPluginApi, deps: HenrySfDeps = {}):
     return;
   }
 
-  const issuer = createRunTokenIssuer({ ttlSeconds: config.runTokenTtlSeconds, now: deps.now });
+  const issuer = createRunTokenIssuer({
+    ttlSeconds: config.runTokenTtlSeconds,
+    secret: PROCESS_RUN_TOKEN_SECRET,
+    now: deps.now,
+  });
   const runLedger = createRunLedger({ ttlSeconds: config.runTokenTtlSeconds, now: deps.now });
   const credentials = createCredentialService({
     config,
