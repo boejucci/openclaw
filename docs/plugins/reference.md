@@ -16,5 +16,5 @@ Regenerate it with:
 pnpm plugins:inventory:gen
 ```
 
-Use [Plugin inventory](/plugins/plugin-inventory) to browse all 152
+Use [Plugin inventory](/plugins/plugin-inventory) to browse all 153
 generated plugin reference pages by distribution, package, and description.
