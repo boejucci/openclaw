@@ -1,0 +1,51 @@
+{
+  "id": "henry-policy",
+  "name": "Henry Policy",
+  "description": "Postgres-backed per-person tool policy gate for the Henry deployment.",
+  "activation": {
+    "onStartup": true
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "db.dsn",
+          "expected": "string"
+        }
+      ]
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "db": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dsn": {
+            "anyOf": [
+              { "type": "string", "minLength": 1 },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "source": { "type": "string", "enum": ["env", "file", "exec", "store"] },
+                  "provider": { "type": "string" },
+                  "id": { "type": "string" }
+                },
+                "required": ["source", "provider", "id"]
+              }
+            ]
+          },
+          "poolMax": { "type": "integer", "minimum": 1, "maximum": 10, "default": 2 }
+        },
+        "required": ["dsn"]
+      },
+      "cacheTtlSeconds": { "type": "integer", "minimum": 0, "maximum": 600, "default": 60 },
+      "defaultVerdict": { "type": "string", "enum": ["allow", "deny"], "default": "deny" },
+      "passthroughNoPrincipal": { "type": "boolean", "default": true }
+    },
+    "required": ["db"]
+  }
+}
