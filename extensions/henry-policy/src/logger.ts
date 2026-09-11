@@ -25,7 +25,9 @@ export function createDecisionLogger(params: { pool: Pool; enabled?: boolean }):
 
   return {
     log(entry: DecisionLogEntry): void {
-      if (!enabled) return;
+      if (!enabled) {
+        return;
+      }
 
       const digest = digestParams(entry.params);
 

@@ -78,11 +78,12 @@ ON CONFLICT (profile_id) DO NOTHING;
 --       { "glob": "memory_search",     "verdict": "allow" },
 --       { "glob": "session_status",    "verdict": "allow" },
 --       { "glob": "mcp:monday:*",      "verdict": "allow" },
---       { "glob": "exec",              "verdict": "deny"  }
+--       { "glob": "exec:sf",           "verdict": "allow"    },
+--       { "glob": "exec",              "verdict": "approval" }
 --     ]
 --   }'
 -- );
--- 
+--
 -- Daniel — member; same Monday access as Nikki; SF read-only
 -- INSERT INTO henry_people (profile_id, email, display_name, role, sf_username_gtmops, sf_username_prod, access)
 -- VALUES (
@@ -101,11 +102,12 @@ ON CONFLICT (profile_id) DO NOTHING;
 --       { "glob": "memory_search",     "verdict": "allow" },
 --       { "glob": "session_status",    "verdict": "allow" },
 --       { "glob": "mcp:monday:*",      "verdict": "allow" },
---       { "glob": "exec",              "verdict": "deny"  }
+--       { "glob": "exec:sf",           "verdict": "allow"    },
+--       { "glob": "exec",              "verdict": "approval" }
 --     ]
 --   }'
 -- );
--- 
+--
 -- Corbin — member; lighter access until confirmed; SF status unknown
 -- INSERT INTO henry_people (profile_id, email, display_name, role, sf_username_gtmops, sf_username_prod, access)
 -- VALUES (
@@ -124,7 +126,8 @@ ON CONFLICT (profile_id) DO NOTHING;
 --       { "glob": "memory_search",     "verdict": "allow" },
 --       { "glob": "session_status",    "verdict": "allow" },
 --       { "glob": "mcp:monday:*",      "verdict": "allow" },
---       { "glob": "exec",              "verdict": "deny"  }
+--       { "glob": "exec:sf",           "verdict": "allow"    },
+--       { "glob": "exec",              "verdict": "approval" }
 --     ]
 --   }'
 -- );

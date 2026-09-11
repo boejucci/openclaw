@@ -52,7 +52,7 @@ Each entry lists the package, distribution route, and description.
 
 ## Core npm package
 
-61 plugins
+62 plugins
 
 - **[a2a](/plugins/reference/a2a)** (`@openclaw/a2a`) - included in OpenClaw. A2A v1.0 Agent-to-Agent protocol channel plugin.
 
@@ -99,6 +99,8 @@ Each entry lists the package, distribution route, and description.
 - **[github-copilot](/plugins/reference/github-copilot)** (`@openclaw/github-copilot-provider`) - included in OpenClaw. Adds GitHub Copilot model provider support to OpenClaw.
 
 - **[google](/plugins/reference/google)** (`@openclaw/google-plugin`) - included in OpenClaw. Adds Google, Google Gemini CLI, Google Vertex model provider support to OpenClaw.
+
+- **[henry-context](/plugins/reference/henry-context)** (`@openclaw/henry-context`) - included in OpenClaw. Injects per-person and team context into every turn; persists per-person memory at session end.
 
 - **[henry-policy](/plugins/reference/henry-policy)** (`@openclaw/henry-policy`) - included in OpenClaw. Postgres-backed per-person tool policy gate for the Henry deployment.
 

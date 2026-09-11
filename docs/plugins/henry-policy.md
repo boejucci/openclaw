@@ -146,7 +146,8 @@ Each `henry_people` row carries an `access` JSONB column:
     { "glob": "memory_search", "verdict": "allow" },
     { "glob": "session_status", "verdict": "allow" },
     { "glob": "mcp:monday:*", "verdict": "allow" },
-    { "glob": "exec", "verdict": "deny" }
+    { "glob": "exec:sf", "verdict": "allow" },
+    { "glob": "exec", "verdict": "approval" }
   ]
 }
 ```
@@ -173,6 +174,44 @@ Henry-policy maps safe names back to their original config keys using
 before glob matching. Write globs against config keys (e.g.
 `mcp:monday:change_item_column_values`), not sanitized safe names.
 
+### The exec:sf pseudo-tool
+
+When the tool name is `exec` and the `command` parameter is a string,
+henry-policy runs it through the **exec classifier** before evaluating access
+rules. The classifier returns one of two values:
+
+- **`pure-sf`** — every invocation in the command is the `sf` CLI (env-prefix
+  and wrapper words like `env`/`sudo` are stripped; absolute paths whose
+  basename is `sf` are recognized). Multiple `sf` commands chained with `;` or
+  `&&` also qualify.
+- **`generic`** — anything else: a non-sf invocation, a pipe (`|` or `||`), a
+  redirection (`>`, `>>`, `<`), a command substitution (`$(…)` or backtick), or
+  a subshell (`(…)`). Empty or whitespace-only input is also `generic`.
+
+When the result is `pure-sf`, henry-policy evaluates the **pseudo-tool name
+`exec:sf`** against the person's access rules first:
+
+- If a rule explicitly matches `exec:sf`, that verdict is used and the decision
+  is logged with `tool = "exec:sf"`.
+- If no rule matches `exec:sf` (only the `defaultVerdict` would apply), the
+  hook falls back to evaluating plain `exec` — so configs without an `exec:sf`
+  rule behave exactly as before.
+
+When the result is `generic`, plain `exec` is evaluated unconditionally.
+
+**Fail-closed stance:** The classifier is intentionally strict. Any shell
+construct that could run an arbitrary second command causes the whole command to
+be classified as `generic`. In particular, `sf … | head` is `generic` (members
+should let Henry post-process sf output rather than piping it). This is the
+accepted tradeoff for security: a false-negative (classifying a non-sf command
+as `pure-sf`) is far more dangerous than a false-positive (classifying a safe
+pipe as `generic` and routing it to the `exec` approval flow).
+
+**Henry-sf still governs read vs. write inside sf:** The exec classifier in
+henry-policy only decides _which policy rule to apply_. Henry-sf at priority 100
+still enforces the `sf` read-vs-write policy and denies credential-exposing
+subcommands regardless of what henry-policy allows.
+
 ## Interaction with henry-sf
 
 | Priority | Plugin       | Matcher   | Result                                                                    |
@@ -186,10 +225,29 @@ henry-policy never sees that call. Henry-policy can still block admin `exec`
 calls for tools not in their access rules.
 
 **Adopted decision — members and exec:** The seed data ships with
-`exec → deny` for members. To let members run `sf` read commands, flip that
-rule to `{ "glob": "exec", "verdict": "allow" }`, trusting henry-sf at
-priority 100 to enforce Salesforce read-only policy. These two layers are
-additive, not competing.
+`exec:sf → allow` and `exec → approval` for members. The `exec:sf` rule lets
+members run pure-`sf` commands (e.g. `sf data query …`) without interrupting
+Joe, while arbitrary shell via the `exec` tool is routed through the approval
+flow. Henry-sf at priority 100 continues to enforce the Salesforce read-vs-write
+policy within those allowed sf commands — the two layers are additive, not
+competing.
+
+## Fail-closed warn behavior
+
+When henry-policy fails closed it now emits a rate-limited `console.warn` so
+the journal surfaces the failure without flooding logs on repeated tool calls:
+
+- **DSN resolution failure** — emitted when the Postgres DSN cannot be resolved
+  (either on first attempt or on re-attempt after the 30-second retry window).
+  Rate limited to once per 60 seconds. Message: `[henry-policy] DSN resolution
+failed; policy checks fail-closed (retrying after 30s)`.
+- **`db.getPerson` failure** — emitted when the database query itself throws
+  after pool creation succeeds (e.g. a transient query error). Rate limited to
+  once per 60 seconds. Message: `[henry-policy] db.getPerson failed; policy
+check fail-closed`.
+
+The warn messages name the failure class only — they never include the DSN
+string, connection parameters, or any request data.
 
 ## Trust model and known limits
 
@@ -209,6 +267,10 @@ Guaranteed by this plugin:
   `passthroughNoPrincipal: false` to block automated runs instead.
 - The pool is a module-scope singleton keyed by resolved DSN so duplicate
   `register()` calls share one connection pool.
+- The exec classifier is fail-closed: any shell construct that could run an
+  arbitrary non-sf command causes the command to be classified as `generic`,
+  never as `pure-sf`. A `generic` classification cannot grant more access than
+  the plain `exec` rule allows.
 
 Not guaranteed, stated plainly:
 

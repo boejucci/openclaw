@@ -355,3 +355,145 @@ describe("createPolicyHook", () => {
     expect(logger.calls[0]?.verdict).toBe("block_not_provisioned");
   });
 });
+
+// ---------------------------------------------------------------------------
+// exec-classifier integration in createPolicyHook
+// ---------------------------------------------------------------------------
+
+describe("createPolicyHook — exec:sf classifier integration", () => {
+  // Helpers — person with exec:sf allow and exec approval rules (member template)
+  function makeMemberWithExecSf(): PersonRow {
+    return makePerson({
+      role: "member",
+      access: {
+        defaultVerdict: "deny",
+        rules: [
+          { glob: "exec:sf", verdict: "allow" },
+          { glob: "exec", verdict: "approval" },
+        ],
+      },
+    });
+  }
+
+  // 14. Pure-sf command + exec:sf allow rule → allow; logged as exec:sf
+  it("pure-sf command with exec:sf allow → allow; tool logged as exec:sf", async () => {
+    const logger = makeLogger();
+    const person = makeMemberWithExecSf();
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: "sf data query -q 'SELECT Id FROM Account'" } },
+      { requester: { senderId: "user-1" } },
+    );
+    expect(result).toBeUndefined();
+    expect(logger.calls[0]?.verdict).toBe("allow");
+    expect(logger.calls[0]?.tool).toBe("exec:sf");
+  });
+
+  // 15. Generic command (pipe) + exec approval rule → requireApproval; logged as exec
+  it("generic command (pipe) → approval path; tool logged as exec", async () => {
+    const logger = makeLogger();
+    const person = makeMemberWithExecSf();
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: "sf org list metadata | head" } },
+      { requester: { senderId: "user-1" } },
+    );
+    expect(result).toBeDefined();
+    const approval = (result as { requireApproval: { title: string; allowedDecisions: string[] } })
+      .requireApproval;
+    expect(approval).toBeDefined();
+    expect(logger.calls[0]?.verdict).toBe("approval");
+    expect(logger.calls[0]?.tool).toBe("exec");
+  });
+
+  // 16. Pure-sf command but no exec:sf rule → falls back to exec rule → approval
+  it("pure-sf command, no exec:sf rule → falls back to exec rule verdict", async () => {
+    const logger = makeLogger();
+    const person = makePerson({
+      role: "member",
+      access: {
+        defaultVerdict: "deny",
+        rules: [{ glob: "exec", verdict: "approval" }],
+      },
+    });
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: "sf data query -q x" } },
+      { requester: { senderId: "user-1" } },
+    );
+    expect(result).toBeDefined();
+    const approval = (result as { requireApproval: { title: string; allowedDecisions: string[] } })
+      .requireApproval;
+    expect(approval).toBeDefined();
+    // Falls back to exec rule, so tool is logged as exec
+    expect(logger.calls[0]?.tool).toBe("exec");
+    expect(logger.calls[0]?.verdict).toBe("approval");
+  });
+
+  // 17. Generic shell command (rm) + exec deny rule → block; logged as exec
+  it("generic shell command with exec deny → block; tool logged as exec", async () => {
+    const logger = makeLogger();
+    const person = makePerson({
+      role: "member",
+      access: {
+        defaultVerdict: "deny",
+        rules: [
+          { glob: "exec:sf", verdict: "allow" },
+          { glob: "exec", verdict: "deny" },
+        ],
+      },
+    });
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: "rm -rf /tmp/x" } },
+      { requester: { senderId: "user-1" } },
+    );
+    expect(result).toMatchObject({ block: true });
+    expect(logger.calls[0]?.verdict).toBe("deny");
+    expect(logger.calls[0]?.tool).toBe("exec");
+  });
+
+  // 18. Non-string command param → treated as generic exec → uses exec rule
+  it("non-string command param → plain exec rule applies", async () => {
+    const logger = makeLogger();
+    const person = makeMemberWithExecSf();
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: 42 } },
+      { requester: { senderId: "user-1" } },
+    );
+    // exec:sf allow wouldn't help; exec approval is the rule
+    const approval = (result as { requireApproval: { title: string } }).requireApproval;
+    expect(approval).toBeDefined();
+    expect(logger.calls[0]?.tool).toBe("exec");
+  });
+
+  // 19. exec:sf allow + onResolution approval callback logs exec:sf
+  it("exec:sf approval onResolution logs exec:sf", async () => {
+    const logger = makeLogger();
+    const person = makePerson({
+      role: "member",
+      access: {
+        defaultVerdict: "deny",
+        rules: [{ glob: "exec:sf", verdict: "approval" }],
+      },
+    });
+    const db = makeDb({ getPerson: vi.fn(() => Promise.resolve(person)) });
+    const hook = createPolicyHook({ ...DEFAULT_PARAMS, db, logger });
+    const result = await hook(
+      { toolName: "exec", params: { command: "sf data query -q x" } },
+      { requester: { senderId: "user-1" } },
+    );
+    const approval = (result as { requireApproval: { onResolution: (d: string) => Promise<void> } })
+      .requireApproval;
+    await approval.onResolution("allow-once");
+    const lastLog = logger.calls[logger.calls.length - 1]!;
+    expect(lastLog.tool).toBe("exec:sf");
+    expect(lastLog.reason).toBe("approval:allow-once");
+  });
+});

@@ -267,3 +267,102 @@ describe("henry-policy plugin", () => {
     expect(PoolCtor).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rate-limited warn tests (Part 3 — register.ts warn patch)
+// ---------------------------------------------------------------------------
+
+describe("rate-limited warn — DSN resolution failure", () => {
+  it("emits exactly one warn for repeated DSN failures within the 60s window", async () => {
+    const { api, on } = buildTestApi();
+    let t = 0;
+    const now = () => t;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const failingResolve = vi.fn().mockRejectedValue(new Error("DSN unavailable"));
+    registerHenryPolicy(api, { resolveSecret: failingResolve, now });
+
+    const handler = findHook(on, "before_tool_call");
+
+    // First call — triggers resolution failure, emits warn
+    t = 0;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+    const countAfterFirst = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("DSN resolution failed"),
+    ).length;
+    expect(countAfterFirst).toBe(1);
+
+    // Second call within 60s window — should NOT emit another warn
+    t = 30_000;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+    const countAfterSecond = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("DSN resolution failed"),
+    ).length;
+    expect(countAfterSecond).toBe(1);
+
+    warnSpy.mockRestore();
+  });
+
+  it("emits a second warn after the 60s rate-limit window expires", async () => {
+    const { api, on } = buildTestApi();
+    let t = 0;
+    const now = () => t;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const failingResolve = vi.fn().mockRejectedValue(new Error("DSN unavailable"));
+    registerHenryPolicy(api, { resolveSecret: failingResolve, now });
+
+    const handler = findHook(on, "before_tool_call");
+
+    // First call — emits warn
+    t = 0;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+
+    // Second call well outside 60s window — should emit another warn
+    t = 61_000;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+    const dsnWarns = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("DSN resolution failed"),
+    ).length;
+    expect(dsnWarns).toBeGreaterThanOrEqual(2);
+
+    warnSpy.mockRestore();
+  });
+});
+
+describe("rate-limited warn — db.getPerson failure", () => {
+  it("emits exactly one warn for repeated db.getPerson failures within the 60s window", async () => {
+    const { pool: fakePool, query } = makeFakePool();
+    // Pool resolves fine but db.getPerson throws from the real DB layer — simulate by
+    // making query throw on every call so createHenryDb propagates the error.
+    query.mockRejectedValue(new Error("db down"));
+
+    const PoolCtor = makePoolCtor(fakePool);
+    let t = 0;
+    const now = () => t;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { api, on } = buildTestApi();
+    registerHenryPolicy(api, { Pool: PoolCtor, now });
+
+    const handler = findHook(on, "before_tool_call");
+
+    // First call — db.getPerson throws, warn emitted
+    t = 0;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+    const countAfterFirst = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("db.getPerson failed"),
+    ).length;
+    expect(countAfterFirst).toBe(1);
+
+    // Second call within 60s window — should NOT emit another warn
+    t = 30_000;
+    await handler({ toolName: "read", params: {} }, { requester: { senderId: "p1" } });
+    const countAfterSecond = warnSpy.mock.calls.filter((c) =>
+      String(c[0]).includes("db.getPerson failed"),
+    ).length;
+    expect(countAfterSecond).toBe(1);
+
+    warnSpy.mockRestore();
+  });
+});

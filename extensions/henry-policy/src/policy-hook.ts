@@ -2,10 +2,10 @@
 // TOOL_NAME_SEPARATOR = "__" (src/agents/agent-bundle-mcp-names.ts:10).
 // The access DSL uses `mcp:<server>:<tool>`, so we normalize before matching.
 // Longest-prefix wins to handle servers whose names contain "__" (e.g. "mon__day").
-import { evaluateAccess, parseAccessPolicy } from "./access.js";
-import type { AccessPolicy } from "./access.js";
+import { evaluateAccessWithReason, parseAccessPolicy } from "./access.js";
+import type { AccessPolicy, AccessVerdict } from "./access.js";
 import type { HenryDb } from "./db.js";
-import { matchGlob } from "./glob.js";
+import { classifyExecCommand } from "./exec-classifier.js";
 import type { DecisionLogger } from "./logger.js";
 
 export type PolicyHookParams = {
@@ -14,6 +14,12 @@ export type PolicyHookParams = {
   globalDefaultVerdict: "allow" | "deny";
   passthroughNoPrincipal: boolean;
   mcpServerNameMap: ReadonlyMap<string, string>;
+  /**
+   * Called (rate-limited by the caller) when db.getPerson throws so that
+   * fail-closed blocks surface in the journal on first occurrence.
+   * Optional — if absent no extra warn is emitted beyond the fail-closed block.
+   */
+  warnDbFailure?: (message: string) => void;
 };
 
 export function normalizeToolName(
@@ -45,13 +51,46 @@ export function normalizeToolName(
   return `mcp:${configKey}:${rest}`;
 }
 
-function resolveMatchedGlob(policy: AccessPolicy, normalizedName: string): string {
-  for (const rule of policy.rules) {
-    if (matchGlob(rule.glob, normalizedName)) {
-      return rule.glob;
+/**
+ * Resolve the effective verdict and matched-glob string for a tool call,
+ * applying exec-classifier logic when the tool is "exec".
+ *
+ * When the tool name is "exec" and the command is a string:
+ *   1. Classify the command as "pure-sf" or "generic".
+ *   2. For "pure-sf", evaluate the pseudo-tool "exec:sf" against the policy.
+ *      - If a rule matched (ruleMatched: true), use that verdict and log "exec:sf".
+ *      - If only the default would apply, fall through to plain "exec" evaluation
+ *        so configs without an exec:sf rule behave exactly as before.
+ *   3. For "generic" (or non-string command), evaluate plain "exec".
+ *
+ * For all other tools, evaluate normally.
+ */
+function resolveExecAwareVerdict(
+  policy: AccessPolicy,
+  normalizedName: string,
+  params: Record<string, unknown>,
+): { verdict: AccessVerdict; loggedTool: string; matchedGlobStr: string } {
+  if (normalizedName === "exec" && typeof params.command === "string") {
+    const commandClass = classifyExecCommand(params.command);
+    if (commandClass === "pure-sf") {
+      const sfResult = evaluateAccessWithReason(policy, "exec:sf");
+      if (sfResult.ruleMatched) {
+        return {
+          verdict: sfResult.verdict,
+          loggedTool: "exec:sf",
+          matchedGlobStr: sfResult.matchedGlob,
+        };
+      }
+      // No exec:sf rule — fall through to plain exec evaluation below.
     }
   }
-  return "default";
+  // Plain exec evaluation (or non-exec tools).
+  const result = evaluateAccessWithReason(policy, normalizedName);
+  return {
+    verdict: result.verdict,
+    loggedTool: normalizedName,
+    matchedGlobStr: result.matchedGlob,
+  };
 }
 
 function shortParamSummary(params: Record<string, unknown>): string {
@@ -65,7 +104,14 @@ function shortParamSummary(params: Record<string, unknown>): string {
 }
 
 export function createPolicyHook(params: PolicyHookParams) {
-  const { db, logger, globalDefaultVerdict, passthroughNoPrincipal, mcpServerNameMap } = params;
+  const {
+    db,
+    logger,
+    globalDefaultVerdict,
+    passthroughNoPrincipal,
+    mcpServerNameMap,
+    warnDbFailure,
+  } = params;
 
   return async function policyHook(
     event: { toolName: string; params: Record<string, unknown> },
@@ -109,6 +155,7 @@ export function createPolicyHook(params: PolicyHookParams) {
       person = await db.getPerson(senderId);
     } catch {
       // DB error — fail closed; do not log (this is an infrastructure failure, not a policy decision)
+      warnDbFailure?.("[henry-policy] db.getPerson failed; policy check fail-closed");
       return { block: true, blockReason: "Policy check unavailable. Try again shortly." };
     }
 
@@ -128,13 +175,16 @@ export function createPolicyHook(params: PolicyHookParams) {
 
     const policy = parseAccessPolicy(person.access, globalDefaultVerdict);
     const normalizedName = normalizeToolName(event.toolName, mcpServerNameMap);
-    const verdict = evaluateAccess(policy, normalizedName);
-    const matchedGlobStr = resolveMatchedGlob(policy, normalizedName);
+    const { verdict, loggedTool, matchedGlobStr } = resolveExecAwareVerdict(
+      policy,
+      normalizedName,
+      event.params,
+    );
 
     if (verdict === "allow") {
       logger.log({
         profileId: senderId,
-        tool: normalizedName,
+        tool: loggedTool,
         params: event.params,
         verdict: "allow",
         reason: matchedGlobStr,
@@ -145,7 +195,7 @@ export function createPolicyHook(params: PolicyHookParams) {
     if (verdict === "deny") {
       logger.log({
         profileId: senderId,
-        tool: normalizedName,
+        tool: loggedTool,
         params: event.params,
         verdict: "deny",
         reason: matchedGlobStr,
@@ -162,7 +212,7 @@ export function createPolicyHook(params: PolicyHookParams) {
 
     logger.log({
       profileId: senderId,
-      tool: normalizedName,
+      tool: loggedTool,
       params: event.params,
       verdict: "approval",
       reason: matchedGlobStr,
@@ -178,7 +228,7 @@ export function createPolicyHook(params: PolicyHookParams) {
         onResolution: async (decision: string) => {
           logger.log({
             profileId: senderId,
-            tool: normalizedName,
+            tool: loggedTool,
             params: event.params,
             verdict: decision === "allow-once" ? "allow" : "deny",
             reason: `approval:${decision}`,

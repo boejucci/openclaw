@@ -4,7 +4,9 @@ const cache = new Map<string, RegExp>();
 
 function toRegExp(glob: string): RegExp {
   const cached = cache.get(glob);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    return cached;
+  }
 
   // Escape all regex specials except *, then replace * with [^:]*
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^:]*");
@@ -19,7 +21,11 @@ function toRegExp(glob: string): RegExp {
  * Exact matches always win (glob === toolName).
  */
 export function matchGlob(glob: string, toolName: string): boolean {
-  if (glob === "" || toolName === "") return false;
-  if (glob === toolName) return true;
+  if (glob === "" || toolName === "") {
+    return false;
+  }
+  if (glob === toolName) {
+    return true;
+  }
   return toRegExp(glob).test(toolName);
 }

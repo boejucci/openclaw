@@ -51,3 +51,25 @@ export function evaluateAccess(policy: AccessPolicy, toolName: string): AccessVe
   }
   return policy.defaultVerdict;
 }
+
+export type AccessResult = {
+  verdict: AccessVerdict;
+  /** The glob that matched, or "default" when no rule matched. */
+  matchedGlob: string;
+  /** True when a rule matched; false when the defaultVerdict was applied. */
+  ruleMatched: boolean;
+};
+
+/**
+ * Like evaluateAccess but also returns which rule matched and whether a rule
+ * (vs. the default) decided the verdict. Used by policy-hook to distinguish
+ * "exec:sf matched an explicit rule" from "only the defaultVerdict would apply".
+ */
+export function evaluateAccessWithReason(policy: AccessPolicy, toolName: string): AccessResult {
+  for (const rule of policy.rules) {
+    if (matchGlob(rule.glob, toolName)) {
+      return { verdict: rule.verdict, matchedGlob: rule.glob, ruleMatched: true };
+    }
+  }
+  return { verdict: policy.defaultVerdict, matchedGlob: "default", ruleMatched: false };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateAccess, parseAccessPolicy } from "./access.js";
+import { evaluateAccess, evaluateAccessWithReason, parseAccessPolicy } from "./access.js";
 
 describe("parseAccessPolicy", () => {
   it("empty object falls back to globalDefault with no rules", () => {
@@ -110,5 +110,56 @@ describe("evaluateAccess", () => {
       "deny",
     );
     expect(evaluateAccess(policy, "read")).toBe("allow");
+  });
+});
+
+describe("evaluateAccessWithReason", () => {
+  it("matched rule: returns ruleMatched=true and the matched glob", () => {
+    const policy = parseAccessPolicy(
+      { defaultVerdict: "deny", rules: [{ glob: "exec:sf", verdict: "allow" }] },
+      "deny",
+    );
+    const result = evaluateAccessWithReason(policy, "exec:sf");
+    expect(result.verdict).toBe("allow");
+    expect(result.matchedGlob).toBe("exec:sf");
+    expect(result.ruleMatched).toBe(true);
+  });
+
+  it("no matching rule: returns ruleMatched=false and matchedGlob=default", () => {
+    const policy = parseAccessPolicy(
+      { defaultVerdict: "deny", rules: [{ glob: "exec:sf", verdict: "allow" }] },
+      "deny",
+    );
+    const result = evaluateAccessWithReason(policy, "exec");
+    expect(result.verdict).toBe("deny");
+    expect(result.matchedGlob).toBe("default");
+    expect(result.ruleMatched).toBe(false);
+  });
+
+  it("glob wildcard match: ruleMatched=true with the wildcard glob", () => {
+    const policy = parseAccessPolicy(
+      { defaultVerdict: "deny", rules: [{ glob: "mcp:monday:*", verdict: "allow" }] },
+      "deny",
+    );
+    const result = evaluateAccessWithReason(policy, "mcp:monday:create_item");
+    expect(result.verdict).toBe("allow");
+    expect(result.matchedGlob).toBe("mcp:monday:*");
+    expect(result.ruleMatched).toBe(true);
+  });
+
+  it("first matching rule wins; subsequent rules not checked", () => {
+    const policy = parseAccessPolicy(
+      {
+        defaultVerdict: "deny",
+        rules: [
+          { glob: "exec:sf", verdict: "allow" },
+          { glob: "exec:sf", verdict: "deny" },
+        ],
+      },
+      "deny",
+    );
+    const result = evaluateAccessWithReason(policy, "exec:sf");
+    expect(result.verdict).toBe("allow");
+    expect(result.ruleMatched).toBe(true);
   });
 });

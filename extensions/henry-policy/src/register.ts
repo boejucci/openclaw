@@ -14,6 +14,19 @@ export type HenryPolicyDeps = {
   Pool?: typeof PgPool;
 };
 
+// Rate-limited warn emitter: emits at most once per rateLimitMs window.
+// `now` is injectable for tests.
+function createRateLimitedWarn(rateLimitMs: number, now: () => number): (message: string) => void {
+  let lastWarnAt: number | undefined;
+  return (message: string) => {
+    const t = now();
+    if (lastWarnAt === undefined || t - lastWarnAt >= rateLimitMs) {
+      lastWarnAt = t;
+      console.warn(message);
+    }
+  };
+}
+
 // Module-scope singleton registry: DSN string → Pool instance.
 //
 // The gateway loader can invoke register() more than once per process (duplicate
@@ -72,6 +85,12 @@ export function registerHenryPolicy(api: OpenClawPluginApi, deps: HenryPolicyDep
     return deps.now ? deps.now() : Date.now();
   }
 
+  // Rate-limited warns: emit at most once per 60 s so repeated fail-closed blocks
+  // don't flood the journal while still surfacing on the first occurrence.
+  const WARN_RATE_MS = 60_000;
+  const warnDsnFailure = createRateLimitedWarn(WARN_RATE_MS, now);
+  const warnDbFailure = createRateLimitedWarn(WARN_RATE_MS, now);
+
   function getOrCreatePool(): Promise<PgPool> {
     if (poolResolvePromise !== undefined) {
       return poolResolvePromise;
@@ -79,6 +98,9 @@ export function registerHenryPolicy(api: OpenClawPluginApi, deps: HenryPolicyDep
 
     // Within the retry window after a failure: fail closed immediately.
     if (lastFailureTime !== undefined && now() - lastFailureTime < RETRY_DELAY_MS) {
+      warnDsnFailure(
+        "[henry-policy] DSN resolution failed; policy checks fail-closed (retrying after 30s)",
+      );
       return Promise.reject(new Error("henry-policy: DSN resolution failed; retrying after 30s"));
     }
 
@@ -99,6 +121,9 @@ export function registerHenryPolicy(api: OpenClawPluginApi, deps: HenryPolicyDep
     poolResolvePromise = poolResolvePromise.catch((err: unknown) => {
       lastFailureTime = now();
       poolResolvePromise = undefined;
+      warnDsnFailure(
+        "[henry-policy] DSN resolution failed; policy checks fail-closed (retrying after 30s)",
+      );
       throw err;
     });
 
@@ -157,6 +182,7 @@ export function registerHenryPolicy(api: OpenClawPluginApi, deps: HenryPolicyDep
     globalDefaultVerdict: config.defaultVerdict,
     passthroughNoPrincipal: config.passthroughNoPrincipal,
     mcpServerNameMap,
+    warnDbFailure,
   });
 
   api.on("before_tool_call", handler, { priority: 90 });
