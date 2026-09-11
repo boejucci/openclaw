@@ -1,0 +1,56 @@
+{
+  "id": "henry-context",
+  "name": "Henry Context",
+  "description": "Injects per-person and team context into every turn; persists per-person memory at session end.",
+  "activation": {
+    "onStartup": true
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "db.dsn",
+          "expected": "string"
+        }
+      ]
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "db": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dsn": {
+            "anyOf": [
+              { "type": "string", "minLength": 1 },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "source": { "type": "string", "enum": ["env", "file", "exec", "store"] },
+                  "provider": { "type": "string" },
+                  "id": { "type": "string" }
+                },
+                "required": ["source", "provider", "id"]
+              }
+            ]
+          },
+          "poolMax": { "type": "integer", "minimum": 1, "maximum": 10, "default": 2 }
+        },
+        "required": ["dsn"]
+      },
+      "teamContextTtlMs": { "type": "integer", "minimum": 0, "default": 600000 },
+      "speakerTtlMs": { "type": "integer", "minimum": 0, "default": 300000 },
+      "staleTtlMs": { "type": "integer", "minimum": 0, "default": 1800000 },
+      "teamTokenBudget": { "type": "integer", "minimum": 100, "default": 2000 },
+      "speakerTokenBudget": { "type": "integer", "minimum": 100, "default": 1000 },
+      "memoryItemLimit": { "type": "integer", "minimum": 1, "default": 10 },
+      "memoryFlushEnabled": { "type": "boolean", "default": true },
+      "invalidateRoutePath": { "type": "string", "default": "/henry/context/invalidate" }
+    },
+    "required": ["db"]
+  }
+}

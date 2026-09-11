@@ -1,0 +1,20 @@
+{
+  "name": "@openclaw/henry-context",
+  "version": "2026.8.2",
+  "private": true,
+  "description": "Per-person and team context injection for Henry",
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*",
+    "@types/pg": "8.11.11"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "pg": "8.16.3",
+    "zod": "4.4.3"
+  }
+}
