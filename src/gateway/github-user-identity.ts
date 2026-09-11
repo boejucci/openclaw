@@ -12,6 +12,7 @@ import {
   fetchGitHubApi,
   fetchGitHubJson,
   GITHUB_API_ORIGIN,
+  githubApiToken,
   GITHUB_REQUEST_TIMEOUT_MS,
   readBoundedResponse,
   readGitHubJsonResponse,
@@ -248,12 +249,15 @@ export function createAuthenticatedGitHubIdentitySync(params: {
     }
     let response: Response | undefined;
     let payload: unknown;
+    let identity: ResolvedGitHubUserIdentity | undefined;
     try {
       response = await fetchGitHubApi(
         `${GITHUB_API_ORIGIN}/user/${accessIdentity.accountId}`,
         fetch,
+        githubApiToken(),
       );
       payload = await readGitHubJsonResponse(response);
+      identity = parseGitHubUserIdentity(accessIdentity.accountId, payload);
     } catch (error) {
       const retryable = response
         ? response.status === 429 ||
@@ -261,7 +265,6 @@ export function createAuthenticatedGitHubIdentitySync(params: {
           (error instanceof ControlUiGitHubError && error.statusCode === 429)
         : !(error instanceof ControlUiGitHubError);
       if (retryable) {
-        // Retry failures may reuse only the exact verified email + immutable-account binding.
         const cached = resolveCachedGitHubIdentity({
           accountId: accessIdentity.accountId,
           email: access.principal,
@@ -270,11 +273,19 @@ export function createAuthenticatedGitHubIdentitySync(params: {
           return cached;
         }
       }
-      throw error instanceof ControlUiGitHubError
-        ? error
-        : new ControlUiGitHubError(502, "GitHub request failed");
+      // api.github.com enrichment (login string, display name) is non-fatal for profile
+      // creation. accountId is the CF Access-proven stable identity; login is used only for
+      // display (profile URL, avatar, co-author attribution). Write the profile row now with a
+      // recognizable stub so the connection is usable; the real login overwrites the stub on
+      // the next successful enrichment call via the upsert path in applyVerifiedGitHubIdentity.
     }
-    const identity = parseGitHubUserIdentity(accessIdentity.accountId, payload);
+    if (!identity) {
+      identity = {
+        accountId: accessIdentity.accountId,
+        login: `id-${accessIdentity.accountId}`,
+        name: accessIdentity.initialDisplayName,
+      };
+    }
     const profile = syncGitHubIdentity({
       identity,
       authenticationAlias: { kind: "email", email: access.principal },
